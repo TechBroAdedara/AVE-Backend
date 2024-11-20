@@ -80,7 +80,7 @@ async def create_user(db: db_dependency, new_user: CreateUserRequest, _: api_key
 
 @router.post("/token/", response_model=Token)
 async def login_for_access_token(
-    form_data: Annotated[OAuth2PasswordRequestForm, Depends()], db: db_dependency
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()], db: db_dependency, _: api_key_dependency
 ):
 
     existing_user = (

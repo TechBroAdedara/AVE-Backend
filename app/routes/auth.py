@@ -16,7 +16,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from app.models.user import User
 from app.database.session import get_db
-from app.utils import authenticate_user, create_access_token, decode_token
+from app.utils import authenticate_user, create_access_token, decode_token, get_api_key
 
 if os.getenv("ENVIRONMENT") == "development":
     load_dotenv()
@@ -32,9 +32,10 @@ oauth2_bearer = OAuth2PasswordBearer(tokenUrl="/auth/token/")
 db_dependency = Annotated[Session, Depends(get_db)]
 
 
+api_key_dependency = Annotated[str, Depends(get_api_key)]
 # --------------------------------------------------------------------------------------
 @router.post("/create_user/", status_code=status.HTTP_201_CREATED)
-async def create_user(db: db_dependency, new_user: CreateUserRequest):
+async def create_user(db: db_dependency, new_user: CreateUserRequest, _: api_key_dependency):
 
     hashed_password = bcrypt_context.hash(new_user.password)
     existing_user = (

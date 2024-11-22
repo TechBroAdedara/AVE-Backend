@@ -46,6 +46,6 @@ def get_api_key(
     if api_key_header in API_KEYS:
         return api_key_header
     raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid or missing API Key",
-    )
+    status_code=status.HTTP_401_UNAUTHORIZED,
+    detail="Invalid or missing API Key",
+)

@@ -30,8 +30,6 @@ oauth2_bearer = OAuth2PasswordBearer(tokenUrl="/auth/token/")
 
 
 db_dependency = Annotated[Session, Depends(get_db)]
-
-
 api_key_dependency = Annotated[str, Depends(get_api_key)]
 # --------------------------------------------------------------------------------------
 @router.post("/create_user/", status_code=status.HTTP_201_CREATED)

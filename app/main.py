@@ -117,6 +117,88 @@ def get_user(user_matric: str, db: db_dependency, _: admin_dependency):
             detail="Internal Error: Contact Administrator (This wasn't even supposed to happen lol)",
         )
 
+@app.post("/create_geofences/")
+def create_geofence(
+    geofence: GeofenceCreate, user: admin_dependency, db: db_dependency
+):
+    """Creates a Geofence with a specific start_time and end_time."""
+
+    start_time = geofence.start_time.replace(tzinfo=ZoneInfo("Africa/Lagos"))
+    end_time = geofence.end_time.replace(tzinfo=ZoneInfo("Africa/Lagos"))
+
+    start_time_utc = start_time.astimezone(ZoneInfo("UTC"))
+    end_time_utc = end_time.astimezone(ZoneInfo("UTC"))
+    # Check if a geofence with the same name and date exists
+    db_geofence = (
+        db.query(Geofence)
+        .filter(
+            Geofence.name == geofence.name,
+            func.date(Geofence.start_time) == start_time_utc.date(),
+        )
+        .first()
+    )
+
+    if db_geofence:
+        raise HTTPException(
+            status_code=400,
+            detail="Geofence with this name already exists for today",
+        )
+
+    try:
+        # Check that the start time is before the end time
+        if start_time_utc >= end_time_utc:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid duration for geofence. Please adjust duration and try again.",
+            )
+
+        # Ensure that the end time is not in the past
+        if end_time_utc < datetime.now(ZoneInfo("UTC")):
+            raise HTTPException(
+                status_code=400, detail="End time cannot be in the past."
+            )
+
+        # Generate a unique code for the geofence
+        initial_code = generate_alphanumeric_code()
+        code = initial_code.lower()
+        # Create a new geofence record
+        new_geofence = Geofence(
+            fence_code=code,
+            name=geofence.name,
+            creator_matric=user["user_matric"],
+            latitude=geofence.latitude,
+            longitude=geofence.longitude,
+            radius=geofence.radius,
+            fence_type=geofence.fence_type,
+            start_time=start_time_utc,  # Save start time in UTC
+            end_time=end_time_utc,  # Save end time in UTC
+            status=(
+                "active"
+                if start_time_utc <= datetime.now(ZoneInfo("UTC")) <= end_time_utc
+                else "scheduled"
+            ),
+            time_created=datetime.now(ZoneInfo("UTC")),
+        )
+        print(start_time, end_time)
+        print(start_time_utc, end_time_utc)
+        db.add(new_geofence)
+        db.commit()
+        db.refresh(new_geofence)
+
+        return {"Code": code, "name": geofence.name}
+
+    except IntegrityError as e:
+        logging.error(e)
+        # if e.errno == 1062:  # Duplicate entry error code
+        raise HTTPException(
+            status_code=400, detail="Geofence with this code already exists"
+        )
+        # else:
+        #     raise HTTPException(
+        #         status_code=500, detail="Internal error. Please try again..."
+        #     )
+
+
 @app.get("/get_attendance/")
 def get_attedance(
     course_title: str, date: datetime, db: db_dependency, user: admin_dependency

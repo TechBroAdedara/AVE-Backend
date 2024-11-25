@@ -33,6 +33,7 @@ if os.getenv("ENVIRONMENT") == "development":
 
 db_dependency = Annotated[Session, Depends(get_db)]
 admin_dependency = Annotated[dict, Depends(get_current_admin_user)]
+student_dependency = Annotated[dict, Depends(get_current_student_user)]
 general_user = Annotated[dict, Depends(get_current_user)]
 
 
@@ -172,8 +173,7 @@ def create_geofence(
             ),
             time_created=datetime.now(ZoneInfo("UTC")),
         )
-        print(start_time, end_time)
-        print(start_time_utc, end_time_utc)
+
         db.add(new_geofence)
         db.commit()
         db.refresh(new_geofence)
@@ -191,6 +191,144 @@ def create_geofence(
         #         status_code=500, detail="Internal error. Please try again..."
         #     )
 
+# ---------------------------- Endpoint to get a list of Geofences
+@app.get("/get_geofences/")
+def get_geofences(
+    db: db_dependency,
+    _: general_user,
+    course_title: Optional[str] = None,
+):
+    """Gets all the active geofences.
+    (Will later be implemented as a websocket to update list in real-time)
+    """
+
+    if course_title is None:
+        geofences = db.query(Geofence).all()
+    else:
+        geofences = db.query(Geofence).filter(Geofence.name == course_title).all()
+
+    if not geofences:
+        raise HTTPException(status_code=404, detail="No geofences found")
+
+    geofences_ordered = geofences[::-1]
+    return {"geofences": geofences_ordered}
+
+
+# ---------------------------- Endpoint to manually deactivate geofence
+@app.put("/manual_deactivate_geofence/", response_model=str)
+def manual_deactivate_geofence(
+    geofence_name: str, date: datetime, db: db_dependency, user: admin_dependency
+):
+    """Manually deactivates the Geofence for the admin."""
+
+    # Check if geofence exists
+    geofence = (
+        db.query(Geofence)
+        .filter(Geofence.name == geofence_name, func.date(Geofence.start_time) == date)
+        .first()
+    )
+
+    if not geofence:
+        raise HTTPException(
+                    status_code=404,
+                    detail="Geofence doesn't exist or not found for specified date",
+                )
+    if geofence.status == "inactive":
+        raise HTTPException(status_code=400, detail="Geofence is already inactive")
+
+    if user["user_matric"] != geofence.creator_matric:
+        raise HTTPException(
+            status_code=401,
+            detail="You don't have permission to delete this class as you are not the creator.",
+        )
+
+    try:
+        # Update if all checks passed
+        geofence.status = "inactive"
+
+        db.commit()
+        db.refresh(geofence)
+
+        return f"Successfully deactivated geofence {geofence_name} for {date} "    
+    except Exception as e:
+        # Handle exceptions
+        logging.error(f"Error deactivating geofence: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error deactivating geofence. Please try again or contact admin.",
+        )
+
+# ---------------------------- Endpoint to validate user attendance and store in database
+@app.post("/record_attendance/")
+def record_attendance(
+    fence_code: str,
+    lat: float,
+    long: float,
+    db: db_dependency,
+    user: student_dependency,
+):
+    """Student Endpoint for validating attendance"""
+
+    # Check if user exists
+    db_user = db.query(User).filter(User.user_matric == user["user_matric"]).first()
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Check if geofence exists
+    geofence = (
+        db.query(Geofence)
+        .filter(Geofence.fence_code == fence_code, Geofence.status == "active")
+        .first()
+    )
+    if not geofence:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Geofence code: {fence_code} not found or is not active",
+        )
+
+    try:
+        if (
+            geofence.status.lower() == "active"
+        ):  # Proceed to check if user is in geofence and record attendance
+            if check_user_in_circular_geofence(lat, long, geofence):
+                matric_fence_code = db_user.user_matric + geofence.fence_code
+
+                new_attendance = AttendanceRecord(
+                    user_matric=db_user.user_matric,
+                    fence_code=fence_code,
+                    geofence_name=geofence.name,
+                    timestamp=datetime.now(),
+                    matric_fence_code=matric_fence_code,
+                )
+
+                db.add(new_attendance)
+                db.commit()
+                db.refresh(new_attendance)
+
+                # THE ONLY SUCCESS
+                return {"message": "Attendance recorded successfully"}
+            # If user isn't within attendance
+            raise HTTPException(
+                status_code=400,
+                detail="User is not within geofence, attendance not recorded",
+            )
+
+        # Geofence isn't open
+        raise HTTPException(
+            status_code=404, detail="Geofence is not open for attendance"
+        )
+
+    except IntegrityError as e:
+        logging.error(e)
+        raise HTTPException(
+            status_code=400,
+            detail="User has already signed attendance for this class",
+        )
+        # else:
+        #     errors.logging.error(e)
+        #     raise HTTPException(
+        #         status_code=500, detail=f"An error occured. Please retry"
+        #     )
 
 @app.get("/get_attendance/")
 def get_attedance(
@@ -246,74 +384,7 @@ def get_attedance(
     return {f"{course_title} attendance records": attendance_records}
 
 
-# ---------------------------- Endpoint to get a list of Geofences
-@app.get("/get_geofences/")
-def get_geofences(
-    db: db_dependency,
-    _: general_user,
-    course_title: Optional[str] = None,
-):
-    """Gets all the active geofences.
-    (Will later be implemented as a websocket to update list in real-time)
-    """
 
-    if course_title is None:
-        geofences = db.query(Geofence).all()
-    else:
-        geofences = db.query(Geofence).filter(Geofence.name == course_title).all()
-
-    if not geofences:
-        raise HTTPException(status_code=404, detail="No geofences found")
-
-    geofences_ordered = geofences[::-1]
-    return {"geofences": geofences_ordered}
-
-
-# ---------------------------- Endpoint to manually deactivate geofence
-@app.put("/manual_deactivate_geofence/", response_model=str)
-def manual_deactivate_geofence(
-    geofence_name: str, date: datetime, db: db_dependency, user: admin_dependency
-):
-    """Manually deactivates the Geofence for the admin."""
-
-    # Check if geofence exists
-    geofence = (
-        db.query(Geofence)
-        .filter(Geofence.name == geofence_name, func.date(Geofence.start_time) == date)
-        .first()
-    )
-
-    if geofence:
-        if geofence.status == "inactive":
-            raise HTTPException(status_code=400, detail="Geofence is already inactive")
-
-        if user["user_matric"] != geofence.creator_matric:
-            raise HTTPException(
-                status_code=401,
-                detail="You don't have permission to delete this class as you are not the creator.",
-            )
-
-        # Update if all checks passed
-        geofence.status = "inactive"
-
-        db.commit()
-        db.refresh(geofence)
-
-        return f"Successfully deactivated geofence {geofence_name} for {date} "
-
-    else:
-        raise HTTPException(
-            status_code=404,
-            detail="Geofence doesn't exist or not found for specified date",
-        )
-
-    # except Exception as e:
-    #     # Handle exceptions
-    #     logging.error.error(f"Error deactivating geofence: {e}")
-    #     raise HTTPException(
-    #         status_code=500,
-    #         detail=f"Error deactivating geofence. Please try again or contact admin.",
-    #     )
 
 # Webhook
 # @app.webhooks.post("New attendance")

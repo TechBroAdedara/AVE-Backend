@@ -214,6 +214,36 @@ def get_geofences(
     return {"geofences": geofences_ordered}
 
 
+@app.get("/get_my_geofences_created")
+def get_my_geofences_created(
+    user: admin_dependency, db: db_dependency, course_title: Optional[str] = None
+):
+    """Gets the geofences created by user requesting from this endpoint."""
+    if course_title is not None:
+        geofences = (
+            db.query(Geofence)
+            .filter(
+                Geofence.name == course_title,
+                Geofence.creator_matric == user["user_matric"],
+            )
+            .all()
+        )
+    else:
+        geofences = (
+            db.query(Geofence)
+            .filter(Geofence.creator_matric == user["user_matric"])
+            .all()
+        )
+
+    if not geofences:
+        raise HTTPException(
+            status_code=404, detail="You haven't created any geofences yet."
+        )
+
+
+    geofences_ordered = geofences[::-1]
+    return geofences_ordered
+
 # ---------------------------- Endpoint to manually deactivate geofence
 @app.put("/manual_deactivate_geofence/", response_model=str)
 def manual_deactivate_geofence(
@@ -384,6 +414,50 @@ def get_attedance(
     return {f"{course_title} attendance records": attendance_records}
 
 
+@app.get("/user_get_attendance/")
+def user_get_attendance(
+    db: db_dependency,
+    user: student_dependency,
+    course_title: Optional[str] = None,
+):
+    """Gets the attendance records of a student, for the student.
+    If no class is specified, returns all records of the student.
+    if specified, returns all records of the student for the particular class.
+    """
+    # when a user provides a geofence/course name
+    if course_title is not None:
+        course_exist = db.query(Geofence).filter(Geofence.name == course_title).all()
+
+        if not course_exist:
+            raise HTTPException(status_code=404, detail="Geofence Not found")
+
+        user_attendances = (
+            db.query(AttendanceRecord)
+            .filter(
+                AttendanceRecord.user_matric == user["user_matric"],
+                AttendanceRecord.geofence_name == course_title,
+            )
+            .all()
+        )
+        if not user_attendances:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No attendance records for {course_title} yet",
+            )
+
+        return user_attendances
+
+    else:
+        # when the user doesn't specify a course_title
+        user_attendances = (
+            db.query(AttendanceRecord)
+            .filter(AttendanceRecord.user_matric == user["user_matric"])
+            .all()
+        )
+        if not user_attendances:
+            raise HTTPException(status_code=404, detail="No Attendance records yet")
+
+        return user_attendances
 
 
 # Webhook

@@ -252,19 +252,7 @@ def get_my_geofences_created(
         )
 
 
-    edited_geofences = []
-    for geofence in geofences:
-        geofence_dict = geofence.__dict__.copy()  # Convert the SQLAlchemy object to a dictionary
-        geofence_dict.pop("fence_code", None) 
-        geofence_dict.pop("longitude", None)
-        geofence_dict.pop("latitude", None)
-        geofence_dict.pop("radius", None)
-        geofence_dict.pop("id", None)   # Remove the fence_code key
-        geofence_dict.pop("_sa_instance_state", None)  # Remove SQLAlchemy's internal state
-        edited_geofences.append(geofence_dict)
-
-    print(geofences[1])
-    return {"geofences": edited_geofences[::-1]}
+    return {"geofences": geofences[::-1]}
 
 # ---------------------------- Endpoint to manually deactivate geofence
 @app.put("/manual_deactivate_geofence/", response_model=str)

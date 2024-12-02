@@ -1,4 +1,3 @@
-
 from datetime import datetime
 import os
 from typing import Annotated, Optional
@@ -25,7 +24,10 @@ from app.database.session import SessionLocal
 from app.models.user import User
 from app.models.geofence import Geofence
 from app.models.attendanceRecord import AttendanceRecord
-from .utils.algorithms import check_user_in_circular_geofence, generate_alphanumeric_code
+from .utils.algorithms import (
+    check_user_in_circular_geofence,
+    generate_alphanumeric_code,
+)
 from .database import get_db
 
 if os.getenv("ENVIRONMENT") == "development":
@@ -36,7 +38,7 @@ admin_dependency = Annotated[dict, Depends(get_current_admin_user)]
 student_dependency = Annotated[dict, Depends(get_current_student_user)]
 general_user = Annotated[dict, Depends(get_current_user)]
 
-
+logger = logging.getLogger("uvicorn")
 # ----------------------------------------Allowed Origins--------------------------------------------
 origins = [
     "http://localhost:3000",
@@ -52,8 +54,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(auth.router)
-
-
 
 
 # ----------------------------------------Routes--------------------------------------------
@@ -110,6 +110,7 @@ def get_user(user_matric: str, db: db_dependency, _: admin_dependency):
             status_code=500,
             detail="Internal Error: Contact Administrator (This wasn't even supposed to happen lol)",
         )
+
 
 @app.post("/create_geofences/")
 def create_geofence(
@@ -191,6 +192,7 @@ def create_geofence(
         #         status_code=500, detail="Internal error. Please try again..."
         #     )
 
+
 # ---------------------------- Endpoint to get a list of Geofences
 @app.get("/get_geofences/")
 def get_geofences(
@@ -212,13 +214,17 @@ def get_geofences(
 
     edited_geofences = []
     for geofence in geofences:
-        geofence_dict = geofence.__dict__.copy()  # Convert the SQLAlchemy object to a dictionary
-        geofence_dict.pop("fence_code", None) 
+        geofence_dict = (
+            geofence.__dict__.copy()
+        )  # Convert the SQLAlchemy object to a dictionary
+        geofence_dict.pop("fence_code", None)
         geofence_dict.pop("longitude", None)
         geofence_dict.pop("latitude", None)
         geofence_dict.pop("radius", None)
-        geofence_dict.pop("id", None) 
-        geofence_dict.pop("_sa_instance_state", None)  # Remove SQLAlchemy's internal state
+        geofence_dict.pop("id", None)
+        geofence_dict.pop(
+            "_sa_instance_state", None
+        )  # Remove SQLAlchemy's internal state
         edited_geofences.append(geofence_dict)
 
     print(geofences[1])
@@ -251,8 +257,8 @@ def get_my_geofences_created(
             status_code=404, detail="You haven't created any geofences yet."
         )
 
-
     return {"geofences": geofences[::-1]}
+
 
 # ---------------------------- Endpoint to manually deactivate geofence
 @app.put("/manual_deactivate_geofence/", response_model=str)
@@ -270,9 +276,9 @@ def manual_deactivate_geofence(
 
     if not geofence:
         raise HTTPException(
-                    status_code=404,
-                    detail="Geofence doesn't exist or not found for specified date",
-                )
+            status_code=404,
+            detail="Geofence doesn't exist or not found for specified date",
+        )
     if geofence.status == "inactive":
         raise HTTPException(status_code=400, detail="Geofence is already inactive")
 
@@ -289,7 +295,7 @@ def manual_deactivate_geofence(
         db.commit()
         db.refresh(geofence)
 
-        return f"Successfully deactivated geofence {geofence_name} for {date} "    
+        return f"Successfully deactivated geofence {geofence_name} for {date} "
     except Exception as e:
         # Handle exceptions
         logging.error(f"Error deactivating geofence: {e}")
@@ -297,6 +303,7 @@ def manual_deactivate_geofence(
             status_code=500,
             detail=f"Error deactivating geofence. Please try again or contact admin.",
         )
+
 
 # ---------------------------- Endpoint to validate user attendance and store in database
 @app.post("/record_attendance/")
@@ -308,6 +315,7 @@ def record_attendance(
     user: student_dependency,
 ):
     """Student Endpoint for validating attendance"""
+    matric_fence_code = db_user.user_matric + geofence.fence_code
 
     # Check if user exists
     db_user = db.query(User).filter(User.user_matric == user["user_matric"]).first()
@@ -320,55 +328,59 @@ def record_attendance(
         .filter(Geofence.fence_code == fence_code, Geofence.status == "active")
         .first()
     )
+    #If Geofence doesnt exist
     if not geofence:
         raise HTTPException(
             status_code=404,
             detail=f"Geofence code: {fence_code} not found or is not active",
         )
 
-    try:
-        if (
-            geofence.status.lower() == "active"
-        ):  # Proceed to check if user is in geofence and record attendance
-            if check_user_in_circular_geofence(lat, long, geofence):
-                matric_fence_code = db_user.user_matric + geofence.fence_code
-
-                new_attendance = AttendanceRecord(
-                    user_matric=db_user.user_matric,
-                    fence_code=fence_code,
-                    geofence_name=geofence.name,
-                    timestamp=datetime.now(),
-                    matric_fence_code=matric_fence_code,
-                )
-
-                db.add(new_attendance)
-                db.commit()
-                db.refresh(new_attendance)
-
-                # THE ONLY SUCCESS
-                return {"message": "Attendance recorded successfully"}
-            # If user isn't within attendance
-            raise HTTPException(
-                status_code=400,
-                detail="User is not within geofence, attendance not recorded",
-            )
-
+    #if geofence is deactivated
+    if geofence.status.lower() != "active":
         # Geofence isn't open
         raise HTTPException(
             status_code=404, detail="Geofence is not open for attendance"
         )
 
-    except IntegrityError as e:
-        logging.error(e)
+    #if someone has already recorded
+    exising_record = (
+        db.query(AttendanceRecord)
+        .filter(
+            AttendanceRecord.matric_fence_code
+            == matric_fence_code
+        )
+        .first()
+    )
+    if exising_record:
         raise HTTPException(
             status_code=400,
             detail="User has already signed attendance for this class",
+            ) 
+    logger.info({"latitude": lat, "longitude": long})
+    # Proceed to check if user is in geofence and record attendance
+    if not check_user_in_circular_geofence(lat, long, geofence):
+        raise HTTPException(
+            status_code=400,
+            detail="User is not within geofence, attendance not recorded",
         )
-        # else:
-        #     errors.logging.error(e)
-        #     raise HTTPException(
-        #         status_code=500, detail=f"An error occured. Please retry"
-        #     )
+    try:
+        new_attendance = AttendanceRecord(
+            user_matric=db_user.user_matric,
+            fence_code=fence_code,
+            geofence_name=geofence.name,
+            timestamp=datetime.now(),
+            matric_fence_code=matric_fence_code,
+        )
+
+        db.add(new_attendance)
+        db.commit()
+        db.refresh(new_attendance)
+
+        # THE ONLY SUCCESS
+        return {"message": "Attendance recorded successfully"}
+    except Exception as e:
+        logger.error(e)
+        raise HTTPException(status_code= 500, detail= "Internal Server Error")
 
 @app.get("/get_attendance/")
 def get_attedance(
@@ -413,13 +425,13 @@ def get_attedance(
         raise HTTPException(status_code=404, detail="No attendance records yet")
 
     attendance_records = [
-            {
-                "username": attendance[0],
-                "user_matric": attendance[1],
-                "timestamp": attendance[2]
-            }
-            for attendance in attendances
-        ]
+        {
+            "username": attendance[0],
+            "user_matric": attendance[1],
+            "timestamp": attendance[2],
+        }
+        for attendance in attendances
+    ]
 
     return {f"{course_title} attendance records": attendance_records}
 
@@ -474,8 +486,6 @@ def user_get_attendance(
 # @app.webhooks.post("New attendance")
 # def new_attendance():
 #     return "Hello"
-
-
 
 
 if __name__ == "__main__":

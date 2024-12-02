@@ -315,12 +315,12 @@ def record_attendance(
     user: student_dependency,
 ):
     """Student Endpoint for validating attendance"""
-    matric_fence_code = db_user.user_matric + geofence.fence_code
-
     # Check if user exists
     db_user = db.query(User).filter(User.user_matric == user["user_matric"]).first()
     if db_user is None:
         raise HTTPException(status_code=404, detail="User not found")
+
+    matric_fence_code = db_user.user_matric + geofence.fence_code
 
     # Check if geofence exists
     geofence = (

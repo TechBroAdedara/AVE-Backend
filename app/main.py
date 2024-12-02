@@ -320,8 +320,6 @@ def record_attendance(
     if db_user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    matric_fence_code = db_user.user_matric + geofence.fence_code
-
     # Check if geofence exists
     geofence = (
         db.query(Geofence)
@@ -334,6 +332,8 @@ def record_attendance(
             status_code=404,
             detail=f"Geofence code: {fence_code} not found or is not active",
         )
+    
+    matric_fence_code = db_user.user_matric + geofence.fence_code
 
     #if geofence is deactivated
     if geofence.status.lower() != "active":

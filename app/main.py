@@ -65,25 +65,24 @@ def index():
 @app.get("/user/")
 def get_user(user_matric: str, db: db_dependency, _: admin_dependency):
     """Get the user and their records from the database."""
-    try:
-        user_records = (
-            db.query(
-                User.user_matric,
-                User.username,
-                User.role,
-                AttendanceRecord.geofence_name,
-                AttendanceRecord.timestamp,
-            )
-            .outerjoin(
-                AttendanceRecord, User.user_matric == AttendanceRecord.user_matric
-            )
-            .filter(User.user_matric == user_matric)
-            .all()
+    user_records = (
+        db.query(
+            User.user_matric,
+            User.username,
+            User.role,
+            AttendanceRecord.geofence_name,
+            AttendanceRecord.timestamp,
         )
+        .outerjoin(
+            AttendanceRecord, User.user_matric == AttendanceRecord.user_matric
+        )
+        .filter(User.user_matric == user_matric)
+        .all()
+    )
 
-        if not user_records:
-            raise HTTPException(status_code=404, detail="User not found")
-
+    if not user_records:
+        raise HTTPException(status_code=404, detail="User not found")
+    try:
         # Extract user details and attendance records
         attendances = [
             {
@@ -105,7 +104,7 @@ def get_user(user_matric: str, db: db_dependency, _: admin_dependency):
         return record
 
     except Exception as e:
-        logging.error(e)
+        logger.error(e)
         raise HTTPException(
             status_code=500,
             detail="Internal Error: Contact Administrator (This wasn't even supposed to happen lol)",
@@ -138,24 +137,25 @@ def create_geofence(
             status_code=400,
             detail="Geofence with this name already exists for today",
         )
+    
+    # Check that the start time is before the end time
+    if start_time_utc >= end_time_utc:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid duration for geofence. Please adjust duration and try again.",
+        )
+    
+    # Ensure that the end time is not in the past
+    if end_time_utc < datetime.now(ZoneInfo("UTC")):
+        raise HTTPException(
+            status_code=400, detail="End time cannot be in the past."
+        )
 
     try:
-        # Check that the start time is before the end time
-        if start_time_utc >= end_time_utc:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid duration for geofence. Please adjust duration and try again.",
-            )
-
-        # Ensure that the end time is not in the past
-        if end_time_utc < datetime.now(ZoneInfo("UTC")):
-            raise HTTPException(
-                status_code=400, detail="End time cannot be in the past."
-            )
-
         # Generate a unique code for the geofence
         initial_code = generate_alphanumeric_code()
         code = initial_code.lower()
+
         # Create a new geofence record
         new_geofence = Geofence(
             fence_code=code,
@@ -172,7 +172,7 @@ def create_geofence(
                 if start_time_utc <= datetime.now(ZoneInfo("UTC")) <= end_time_utc
                 else "scheduled"
             ),
-            time_created=datetime.now(ZoneInfo("UTC")),
+            time_created=datetime.now(ZoneInfo("UTC"))
         )
 
         db.add(new_geofence)
@@ -181,16 +181,11 @@ def create_geofence(
 
         return {"Code": code, "name": geofence.name}
 
-    except IntegrityError as e:
-        logging.error(e)
-        # if e.errno == 1062:  # Duplicate entry error code
+    except Exception as e:
+        logger.error(e)
         raise HTTPException(
-            status_code=400, detail="Geofence with this code already exists"
+            status_code=500, detail="Internal Server Error."
         )
-        # else:
-        #     raise HTTPException(
-        #         status_code=500, detail="Internal error. Please try again..."
-        #     )
 
 
 # ---------------------------- Endpoint to get a list of Geofences
@@ -227,7 +222,6 @@ def get_geofences(
         )  # Remove SQLAlchemy's internal state
         edited_geofences.append(geofence_dict)
 
-    print(geofences[1])
     return {"geofences": edited_geofences[::-1]}
 
 
@@ -295,10 +289,9 @@ def manual_deactivate_geofence(
         db.commit()
         db.refresh(geofence)
 
-        return f"Successfully deactivated geofence {geofence_name} for {date} "
+        return f"Successfully deactivated geofence {geofence_name} for {date}"
     except Exception as e:
-        # Handle exceptions
-        logging.error(f"Error deactivating geofence: {e}")
+        logger.error(f"Error deactivating geofence: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Error deactivating geofence. Please try again or contact admin.",

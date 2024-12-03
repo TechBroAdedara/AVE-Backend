@@ -1,3 +1,6 @@
+# Copyright (c) [2024] [Adedara Adeloro].
+# Licensed for non-commercial use only. For details, see the LICENSE file.
+
 # ----------------------------------------Geolocation Logic/Algorithm--------------------------------------------
 import math
 import random

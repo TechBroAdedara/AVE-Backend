@@ -1,3 +1,6 @@
+# Copyright (c) [2024] [Adedara Adeloro].
+# Licensed for non-commercial use only. For details, see the LICENSE file.
+
 from jose import jwt, JWTError
 import os
 from dotenv import load_dotenv

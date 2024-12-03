@@ -1,3 +1,6 @@
+# Copyright (c) [2024] [Adedara Adeloro].
+# Licensed for non-commercial use only. For details, see the LICENSE file.
+
 # initialize.py
 from session import engine, Base
 from ..models import User, Geofence, AttendanceRecord  # Import models that need tables

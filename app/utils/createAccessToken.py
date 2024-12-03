@@ -1,3 +1,6 @@
+# Copyright (c) [2024] [Adedara Adeloro].
+# Licensed for non-commercial use only. For details, see the LICENSE file.
+
 from pydantic import EmailStr
 from datetime import timedelta, datetime
 from jose import JWTError, jwt

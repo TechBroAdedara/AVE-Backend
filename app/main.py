@@ -76,9 +76,7 @@ def get_user(user_matric: str, db: db_dependency, _: admin_dependency):
             AttendanceRecord.geofence_name,
             AttendanceRecord.timestamp,
         )
-        .outerjoin(
-            AttendanceRecord, User.user_matric == AttendanceRecord.user_matric
-        )
+        .outerjoin(AttendanceRecord, User.user_matric == AttendanceRecord.user_matric)
         .filter(User.user_matric == user_matric)
         .all()
     )
@@ -140,19 +138,17 @@ def create_geofence(
             status_code=400,
             detail="Geofence with this name already exists for today",
         )
-    
+
     # Check that the start time is before the end time
     if start_time_utc >= end_time_utc:
         raise HTTPException(
             status_code=400,
             detail="Invalid duration for geofence. Please adjust duration and try again.",
         )
-    
+
     # Ensure that the end time is not in the past
     if end_time_utc < datetime.now(ZoneInfo("UTC")):
-        raise HTTPException(
-            status_code=400, detail="End time cannot be in the past."
-        )
+        raise HTTPException(status_code=400, detail="End time cannot be in the past.")
 
     try:
         # Generate a unique code for the geofence
@@ -175,7 +171,7 @@ def create_geofence(
                 if start_time_utc <= datetime.now(ZoneInfo("UTC")) <= end_time_utc
                 else "scheduled"
             ),
-            time_created=datetime.now(ZoneInfo("UTC"))
+            time_created=datetime.now(ZoneInfo("UTC")),
         )
 
         db.add(new_geofence)
@@ -186,9 +182,7 @@ def create_geofence(
 
     except Exception as e:
         logger.error(e)
-        raise HTTPException(
-            status_code=500, detail="Internal Server Error."
-        )
+        raise HTTPException(status_code=500, detail="Internal Server Error.")
 
 
 # ---------------------------- Endpoint to get a list of Geofences
@@ -322,36 +316,33 @@ def record_attendance(
         .filter(Geofence.fence_code == fence_code, Geofence.status == "active")
         .first()
     )
-    #If Geofence doesnt exist
+    # If Geofence doesnt exist
     if not geofence:
         raise HTTPException(
             status_code=404,
-            detail=f"Geofence code: {fence_code} not found or is not active",
+            detail=f"Invalid geofence code",
         )
-    
+
     matric_fence_code = db_user.user_matric + geofence.fence_code
 
-    #if geofence is deactivated
+    # if geofence is deactivated
     if geofence.status.lower() != "active":
         # Geofence isn't open
         raise HTTPException(
             status_code=404, detail="Geofence is not open for attendance"
         )
 
-    #if someone has already recorded
+    # if someone has already recorded
     exising_record = (
         db.query(AttendanceRecord)
-        .filter(
-            AttendanceRecord.matric_fence_code
-            == matric_fence_code
-        )
+        .filter(AttendanceRecord.matric_fence_code == matric_fence_code)
         .first()
     )
     if exising_record:
         raise HTTPException(
             status_code=400,
             detail="User has already signed attendance for this class",
-            ) 
+        )
     logger.info({"latitude": lat, "longitude": long})
     # Proceed to check if user is in geofence and record attendance
     if not check_user_in_circular_geofence(lat, long, geofence):
@@ -376,7 +367,8 @@ def record_attendance(
         return {"message": "Attendance recorded successfully"}
     except Exception as e:
         logger.error(e)
-        raise HTTPException(status_code= 500, detail= "Internal Server Error")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
 
 @app.get("/get_attendance/")
 def get_attedance(

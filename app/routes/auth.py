@@ -111,7 +111,7 @@ async def login_for_access_token(
         authenticated_user.username,
         authenticated_user.role,
         authenticated_user.user_matric,
-        timedelta(minutes=20),
+        timedelta(hours=20),
     )
     return {"access_token": token, "token_type": "bearer"}
 
